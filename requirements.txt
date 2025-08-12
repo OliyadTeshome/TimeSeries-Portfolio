@@ -7,9 +7,14 @@ scipy>=1.9.0
 scikit-learn>=1.1.0
 statsmodels>=0.13.0
 
-# Deep learning
-tensorflow>=2.10.0
-keras>=2.10.0
+# Deep learning alternatives (TensorFlow/Keras not compatible with Python 3.13)
+# tensorflow>=2.10.0  # NOT COMPATIBLE WITH PYTHON 3.13
+# keras>=2.10.0       # NOT COMPATIBLE WITH PYTHON 3.13
+torch>=2.0.0          # Alternative deep learning framework
+torchvision>=0.15.0   # Computer vision for PyTorch
+torchaudio>=2.0.0     # Audio processing for PyTorch
+xgboost>=1.7.0        # Gradient boosting alternative
+lightgbm>=4.0.0       # Light gradient boosting alternative
 
 # Visualization
 matplotlib>=3.5.0
@@ -37,3 +42,7 @@ pulp>=2.6.0
 # Additional utilities
 tqdm>=4.64.0
 joblib>=1.2.0
+
+# Note: This requirements.txt has been updated for Python 3.13 compatibility
+# TensorFlow and Keras are not compatible with Python 3.13
+# PyTorch, XGBoost, and LightGBM are recommended alternatives for deep learning

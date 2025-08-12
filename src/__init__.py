@@ -13,7 +13,7 @@ from .data_loader import DataLoader, load_sample_data
 from .preprocessing import TimeSeriesPreprocessor, preprocess_pipeline
 from .eda import TimeSeriesEDA, run_complete_eda
 from .arima_model import ARIMAModel, auto_arima
-from .lstm_model import LSTMModel, auto_lstm
+from .lstm_model import LSTMForecaster, create_lstm_model
 from .forecasting import ForecastingEngine, run_complete_forecasting
 from .portfolio_optimization import PortfolioOptimizer, run_portfolio_optimization
 from .backtesting import Backtester, run_complete_backtesting
@@ -34,8 +34,8 @@ __all__ = [
     # Forecasting models
     'ARIMAModel',
     'auto_arima',
-    'LSTMModel',
-    'auto_lstm',
+    'LSTMForecaster',
+    'create_lstm_model',
     
     # Forecasting engine
     'ForecastingEngine',

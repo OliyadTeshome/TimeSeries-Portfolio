@@ -3,6 +3,7 @@ LSTM Model Module
 
 This module provides implementation of Long Short-Term Memory (LSTM) neural networks
 for time series forecasting with automatic hyperparameter tuning and validation.
+Updated for PyTorch compatibility with Python 3.13.
 """
 
 import pandas as pd
@@ -10,27 +11,83 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple, Union
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-import tensorflow as tf
-from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
 import warnings
 import logging
 import os
+import pickle
 
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
 
-class LSTMModel:
+class LSTMModel(nn.Module):
     """
-    A comprehensive LSTM model implementation for time series forecasting.
+    A comprehensive LSTM model implementation for time series forecasting using PyTorch.
+    """
+    
+    def __init__(self, input_size: int = 1, hidden_size: int = 50, num_layers: int = 2, 
+                 dropout: float = 0.2, output_size: int = 1):
+        """
+        Initialize the LSTM model.
+        
+        Args:
+            input_size (int): Number of input features
+            hidden_size (int): Number of hidden units in LSTM
+            num_layers (int): Number of LSTM layers
+            dropout (float): Dropout rate
+            output_size (int): Number of output features
+        """
+        super(LSTMModel, self).__init__()
+        
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, 
+                           batch_first=True, dropout=dropout if num_layers > 1 else 0)
+        self.dropout = nn.Dropout(dropout)
+        self.fc = nn.Linear(hidden_size, output_size)
+        
+        # Set random seeds for reproducibility
+        torch.manual_seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(42)
+    
+    def forward(self, x):
+        """
+        Forward pass through the LSTM network.
+        
+        Args:
+            x: Input tensor of shape (batch_size, sequence_length, input_size)
+            
+        Returns:
+            Output tensor of shape (batch_size, output_size)
+        """
+        # Initialize hidden state with zeros
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        
+        # Forward propagate LSTM
+        out, _ = self.lstm(x, (h0, c0))
+        
+        # Decode the hidden state of the last time step
+        out = self.dropout(out[:, -1, :])
+        out = self.fc(out)
+        
+        return out
+
+
+class LSTMForecaster:
+    """
+    A comprehensive LSTM forecaster implementation for time series forecasting.
     """
     
     def __init__(self, data: pd.Series, sequence_length: int = 10):
         """
-        Initialize the LSTM model.
+        Initialize the LSTM forecaster.
         
         Args:
             data (pd.Series): Time series data
@@ -52,6 +109,7 @@ class LSTMModel:
         self.val_predictions = None
         self.test_predictions = None
         self.forecast = None
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         # Validate data
         if not isinstance(data, pd.Series):
@@ -59,9 +117,7 @@ class LSTMModel:
         if len(data) < sequence_length + 10:
             raise ValueError(f"Data must have at least {sequence_length + 10} observations")
         
-        # Set random seeds for reproducibility
-        np.random.seed(42)
-        tf.random.set_seed(42)
+        logger.info(f"Using device: {self.device}")
     
     def prepare_data(self, train_ratio: float = 0.7, val_ratio: float = 0.15,
                     test_ratio: float = 0.15) -> None:
@@ -101,440 +157,350 @@ class LSTMModel:
         Create sequences for LSTM training.
         
         Args:
-            data (np.ndarray): Scaled data
+            data (np.ndarray): Scaled time series data
             
         Returns:
-            Tuple[np.ndarray, np.ndarray]: Input sequences and target values
+            Tuple of (X, y) where X contains sequences and y contains targets
         """
         X, y = [], []
         for i in range(len(data) - self.sequence_length):
-            X.append(data[i:(i + self.sequence_length), 0])
-            y.append(data[i + self.sequence_length, 0])
-        
+            X.append(data[i:(i + self.sequence_length)])
+            y.append(data[i + self.sequence_length])
         return np.array(X), np.array(y)
     
-    def build_model(self, lstm_units: List[int] = [50, 50], 
-                   dropout_rate: float = 0.2, learning_rate: float = 0.001) -> None:
+    def build_model(self, hidden_size: int = 50, num_layers: int = 2, 
+                   dropout: float = 0.2, learning_rate: float = 0.001) -> None:
         """
-        Build the LSTM model architecture.
+        Build the LSTM model.
         
         Args:
-            lstm_units (List[int]): Number of units in each LSTM layer
-            dropout_rate (float): Dropout rate for regularization
+            hidden_size (int): Number of hidden units in LSTM
+            num_layers (int): Number of LSTM layers
+            dropout (float): Dropout rate
             learning_rate (float): Learning rate for optimizer
         """
-        self.model = Sequential()
+        self.model = LSTMModel(
+            input_size=1,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout
+        ).to(self.device)
         
-        # Add LSTM layers
-        for i, units in enumerate(lstm_units):
-            if i == 0:
-                self.model.add(LSTM(units, return_sequences=(i < len(lstm_units) - 1),
-                                   input_shape=(self.sequence_length, 1)))
-            else:
-                self.model.add(LSTM(units, return_sequences=(i < len(lstm_units) - 1)))
-            
-            # Add dropout and batch normalization
-            self.model.add(Dropout(dropout_rate))
-            if i < len(lstm_units) - 1:  # Don't add batch norm after last LSTM layer
-                self.model.add(BatchNormalization())
+        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.criterion = nn.MSELoss()
         
-        # Add output layer
-        self.model.add(Dense(1))
-        
-        # Compile model
-        optimizer = Adam(learning_rate=learning_rate)
-        self.model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
-        
-        logger.info("LSTM model built successfully")
-        logger.info(f"Model summary:\n{self.model.summary()}")
+        logger.info(f"Model built: hidden_size={hidden_size}, num_layers={num_layers}, dropout={dropout}")
     
-    def train_model(self, epochs: int = 100, batch_size: int = 32,
-                   patience: int = 20, verbose: int = 1) -> None:
+    def train(self, epochs: int = 100, batch_size: int = 32, patience: int = 10) -> Dict[str, List[float]]:
         """
         Train the LSTM model.
         
         Args:
-            epochs (int): Maximum number of training epochs
+            epochs (int): Number of training epochs
             batch_size (int): Batch size for training
-            patience (int): Patience for early stopping
-            verbose (int): Verbosity level
+            patience (int): Early stopping patience
+            
+        Returns:
+            Dictionary containing training history
         """
         if self.model is None:
             raise ValueError("Model must be built before training")
-        if self.X_train is None:
-            raise ValueError("Data must be prepared before training")
         
-        # Callbacks
-        callbacks = [
-            EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True),
-            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=patience//2, min_lr=1e-7),
-            ModelCheckpoint('best_lstm_model.h5', monitor='val_loss', save_best_only=True)
-        ]
+        # Convert data to PyTorch tensors
+        X_train_tensor = torch.FloatTensor(self.X_train).to(self.device)
+        y_train_tensor = torch.FloatTensor(self.y_train).to(self.device)
+        X_val_tensor = torch.FloatTensor(self.X_val).to(self.device)
+        y_val_tensor = torch.FloatTensor(self.y_val).to(self.device)
         
-        # Train model
-        self.history = self.model.fit(
-            self.X_train, self.y_train,
-            validation_data=(self.X_val, self.y_val),
-            epochs=epochs,
-            batch_size=batch_size,
-            callbacks=callbacks,
-            verbose=verbose
-        )
+        # Create data loaders
+        train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         
-        logger.info("LSTM model training completed")
+        # Training history
+        history = {'train_loss': [], 'val_loss': []}
+        best_val_loss = float('inf')
+        patience_counter = 0
+        
+        for epoch in range(epochs):
+            # Training phase
+            self.model.train()
+            train_loss = 0.0
+            for batch_X, batch_y in train_loader:
+                self.optimizer.zero_grad()
+                outputs = self.model(batch_X)
+                loss = self.criterion(outputs, batch_y)
+                loss.backward()
+                self.optimizer.step()
+                train_loss += loss.item()
+            
+            # Validation phase
+            self.model.eval()
+            with torch.no_grad():
+                val_outputs = self.model(X_val_tensor)
+                val_loss = self.criterion(val_outputs, y_val_tensor).item()
+            
+            # Record history
+            avg_train_loss = train_loss / len(train_loader)
+            history['train_loss'].append(avg_train_loss)
+            history['val_loss'].append(val_loss)
+            
+            # Early stopping
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+            else:
+                patience_counter += 1
+            
+            if patience_counter >= patience:
+                logger.info(f"Early stopping at epoch {epoch + 1}")
+                break
+            
+            if (epoch + 1) % 10 == 0:
+                logger.info(f"Epoch {epoch + 1}/{epochs}, Train Loss: {avg_train_loss:.6f}, Val Loss: {val_loss:.6f}")
+        
+        self.history = history
+        logger.info("Training completed")
+        return history
     
-    def make_predictions(self) -> None:
+    def predict(self, X: np.ndarray) -> np.ndarray:
         """
-        Make predictions on train, validation, and test sets.
+        Make predictions using the trained model.
+        
+        Args:
+            X (np.ndarray): Input sequences
+            
+        Returns:
+            Predicted values
         """
         if self.model is None:
             raise ValueError("Model must be trained before making predictions")
         
+        self.model.eval()
+        X_tensor = torch.FloatTensor(X).to(self.device)
+        
+        with torch.no_grad():
+            predictions = self.model(X_tensor)
+        
+        return predictions.cpu().numpy()
+    
+    def evaluate(self) -> Dict[str, float]:
+        """
+        Evaluate the model on test data.
+        
+        Returns:
+            Dictionary containing evaluation metrics
+        """
+        if self.model is None:
+            raise ValueError("Model must be trained before evaluation")
+        
         # Make predictions
-        self.train_predictions = self.model.predict(self.X_train)
-        self.val_predictions = self.model.predict(self.X_val)
-        self.test_predictions = self.model.predict(self.X_test)
+        self.test_predictions = self.predict(self.X_test)
         
-        # Inverse transform predictions
-        self.train_predictions = self.scaler.inverse_transform(self.train_predictions)
-        self.val_predictions = self.scaler.inverse_transform(self.val_predictions)
-        self.test_predictions = self.scaler.inverse_transform(self.test_predictions)
+        # Inverse transform predictions and actual values
+        y_test_actual = self.scaler.inverse_transform(self.y_test.reshape(-1, 1)).flatten()
+        y_test_pred = self.scaler.inverse_transform(self.test_predictions.reshape(-1, 1)).flatten()
         
-        # Inverse transform actual values
-        self.y_train_actual = self.scaler.inverse_transform(self.y_train.reshape(-1, 1))
-        self.y_val_actual = self.scaler.inverse_transform(self.y_val.reshape(-1, 1))
-        self.y_test_actual = self.scaler.inverse_transform(self.y_test.reshape(-1, 1))
-        
-        logger.info("Predictions generated for all datasets")
-    
-    def evaluate_model(self) -> Dict[str, Dict[str, float]]:
-        """
-        Evaluate the model performance on all datasets.
-        
-        Returns:
-            Dict[str, Dict[str, float]]: Performance metrics for each dataset
-        """
-        if self.train_predictions is None:
-            raise ValueError("Predictions must be generated before evaluation")
-        
-        metrics = {}
-        
-        # Evaluate on training data
-        train_metrics = self._calculate_metrics(self.y_train_actual, self.train_predictions)
-        metrics['train'] = train_metrics
-        
-        # Evaluate on validation data
-        val_metrics = self._calculate_metrics(self.y_val_actual, self.val_predictions)
-        metrics['validation'] = val_metrics
-        
-        # Evaluate on test data
-        test_metrics = self._calculate_metrics(self.y_test_actual, self.test_predictions)
-        metrics['test'] = test_metrics
-        
-        # Log results
-        logger.info("Model evaluation completed:")
-        for dataset, dataset_metrics in metrics.items():
-            logger.info(f"{dataset.capitalize()} - RMSE: {dataset_metrics['RMSE']:.4f}, MAE: {dataset_metrics['MAE']:.4f}")
-        
-        return metrics
-    
-    def _calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-        """
-        Calculate performance metrics.
-        
-        Args:
-            y_true (np.ndarray): True values
-            y_pred (np.ndarray): Predicted values
-            
-        Returns:
-            Dict[str, float]: Performance metrics
-        """
-        mse = mean_squared_error(y_true, y_pred)
-        mae = mean_absolute_error(y_true, y_pred)
+        # Calculate metrics
+        mse = mean_squared_error(y_test_actual, y_test_pred)
         rmse = np.sqrt(mse)
-        mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+        mae = mean_absolute_error(y_test_actual, y_test_pred)
         
-        return {
+        # Calculate MAPE
+        mape = np.mean(np.abs((y_test_actual - y_test_pred) / y_test_actual)) * 100
+        
+        metrics = {
             'MSE': mse,
-            'MAE': mae,
             'RMSE': rmse,
+            'MAE': mae,
             'MAPE': mape
         }
+        
+        logger.info(f"Test Metrics: MSE={mse:.6f}, RMSE={rmse:.6f}, MAE={mae:.6f}, MAPE={mape:.2f}%")
+        return metrics
     
     def forecast_future(self, steps: int) -> np.ndarray:
         """
-        Generate future forecasts.
+        Forecast future values.
         
         Args:
             steps (int): Number of steps to forecast
             
         Returns:
-            np.ndarray: Forecasted values
+            Forecasted values
         """
         if self.model is None:
             raise ValueError("Model must be trained before forecasting")
         
-        # Get the last sequence
-        last_sequence = self.scaled_data[-self.sequence_length:].reshape(1, self.sequence_length, 1)
+        self.model.eval()
         
-        forecasts = []
-        current_sequence = last_sequence.copy()
+        # Start with the last sequence from training data
+        last_sequence = self.scaled_data[-self.sequence_length:].reshape(1, -1, 1)
+        last_sequence_tensor = torch.FloatTensor(last_sequence).to(self.device)
         
-        for _ in range(steps):
-            # Predict next value
-            next_pred = self.model.predict(current_sequence, verbose=0)
-            forecasts.append(next_pred[0, 0])
-            
-            # Update sequence for next prediction
-            current_sequence = np.roll(current_sequence, -1)
-            current_sequence[0, -1, 0] = next_pred[0, 0]
+        forecast_values = []
         
-        # Inverse transform forecasts
-        self.forecast = self.scaler.inverse_transform(np.array(forecasts).reshape(-1, 1))
+        with torch.no_grad():
+            for _ in range(steps):
+                # Make prediction
+                prediction = self.model(last_sequence_tensor)
+                forecast_values.append(prediction.cpu().numpy()[0, 0])
+                
+                # Update sequence for next prediction
+                last_sequence = np.roll(last_sequence, -1, axis=1)
+                last_sequence[0, -1, 0] = prediction.cpu().numpy()[0, 0]
+                last_sequence_tensor = torch.FloatTensor(last_sequence).to(self.device)
         
-        logger.info(f"Generated {steps} step forecast")
+        # Inverse transform forecast
+        forecast_scaled = np.array(forecast_values).reshape(-1, 1)
+        self.forecast = self.scaler.inverse_transform(forecast_scaled).flatten()
+        
+        logger.info(f"Forecast completed for {steps} steps")
         return self.forecast
-    
-    def plot_training_history(self, save_path: Optional[str] = None) -> None:
-        """
-        Plot training history.
-        
-        Args:
-            save_path (str, optional): Path to save plot
-        """
-        if self.history is None:
-            raise ValueError("Model must be trained before plotting history")
-        
-        try:
-            import matplotlib.pyplot as plt
-            
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-            
-            # Plot loss
-            ax1.plot(self.history.history['loss'], label='Training Loss')
-            ax1.plot(self.history.history['val_loss'], label='Validation Loss')
-            ax1.set_title('Model Loss')
-            ax1.set_xlabel('Epoch')
-            ax1.set_ylabel('Loss')
-            ax1.legend()
-            ax1.grid(True, alpha=0.3)
-            
-            # Plot MAE
-            ax2.plot(self.history.history['mae'], label='Training MAE')
-            ax2.plot(self.history.history['val_mae'], label='Validation MAE')
-            ax2.set_title('Model MAE')
-            ax2.set_xlabel('Epoch')
-            ax2.set_ylabel('MAE')
-            ax2.legend()
-            ax2.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            
-            if save_path:
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-                logger.info(f"Training history plot saved to {save_path}")
-            else:
-                plt.show()
-                
-        except Exception as e:
-            logger.warning(f"Could not create training history plot: {str(e)}")
-    
-    def plot_predictions(self, save_path: Optional[str] = None) -> None:
-        """
-        Plot predictions vs actual values.
-        
-        Args:
-            save_path (str, optional): Path to save plot
-        """
-        if self.train_predictions is None:
-            raise ValueError("Predictions must be generated before plotting")
-        
-        try:
-            import matplotlib.pyplot as plt
-            
-            # Create date indices for plotting
-            train_dates = self.data.index[self.sequence_length:self.sequence_length + len(self.train_predictions)]
-            val_dates = self.data.index[self.sequence_length + len(self.train_predictions):
-                                      self.sequence_length + len(self.train_predictions) + len(self.val_predictions)]
-            test_dates = self.data.index[self.sequence_length + len(self.train_predictions) + len(self.val_predictions):
-                                       self.sequence_length + len(self.train_predictions) + len(self.val_predictions) + len(self.test_predictions)]
-            
-            plt.figure(figsize=(15, 8))
-            
-            # Plot original data
-            plt.plot(self.data.index, self.data.values, label='Original Data', alpha=0.7, linewidth=1)
-            
-            # Plot predictions
-            plt.plot(train_dates, self.train_predictions.flatten(), label='Train Predictions', linewidth=2)
-            plt.plot(val_dates, self.val_predictions.flatten(), label='Validation Predictions', linewidth=2)
-            plt.plot(test_dates, self.test_predictions.flatten(), label='Test Predictions', linewidth=2)
-            
-            plt.title('LSTM Model Predictions')
-            plt.xlabel('Date')
-            plt.ylabel('Value')
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            plt.tight_layout()
-            
-            if save_path:
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-                logger.info(f"Predictions plot saved to {save_path}")
-            else:
-                plt.show()
-                
-        except Exception as e:
-            logger.warning(f"Could not create predictions plot: {str(e)}")
-    
-    def plot_forecast(self, save_path: Optional[str] = None) -> None:
-        """
-        Plot the original data and future forecast.
-        
-        Args:
-            save_path (str, optional): Path to save plot
-        """
-        if self.forecast is None:
-            raise ValueError("Forecast must be generated before plotting")
-        
-        try:
-            import matplotlib.pyplot as plt
-            
-            # Create future dates
-            last_date = self.data.index[-1]
-            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), 
-                                       periods=len(self.forecast), freq='D')
-            
-            plt.figure(figsize=(15, 8))
-            
-            # Plot original data
-            plt.plot(self.data.index, self.data.values, label='Original Data', linewidth=2)
-            
-            # Plot forecast
-            plt.plot(future_dates, self.forecast.flatten(), 
-                    label='LSTM Forecast', linewidth=2, linestyle='--', color='red')
-            
-            plt.title('LSTM Model Future Forecast')
-            plt.xlabel('Date')
-            plt.ylabel('Value')
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            plt.tight_layout()
-            
-            if save_path:
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-                logger.info(f"Forecast plot saved to {save_path}")
-            else:
-                plt.show()
-                
-        except Exception as e:
-            logger.warning(f"Could not create forecast plot: {str(e)}")
     
     def save_model(self, filepath: str) -> None:
         """
-        Save the trained model and scaler.
+        Save the trained model.
         
         Args:
             filepath (str): Path to save the model
         """
         if self.model is None:
-            raise ValueError("Model must be trained before saving")
+            raise ValueError("No model to save")
         
-        try:
-            # Save Keras model
-            model_path = filepath.replace('.pkl', '_model.h5')
-            self.model.save(model_path)
-            
-            # Save scaler and other components
-            import pickle
-            model_data = {
-                'scaler': self.scaler,
-                'sequence_length': self.sequence_length,
-                'history': self.history,
-                'forecast': self.forecast
-            }
-            
-            with open(filepath, 'wb') as f:
-                pickle.dump(model_data, f)
-            
-            logger.info(f"Model saved to {filepath} and {model_path}")
-            
-        except Exception as e:
-            logger.error(f"Error saving model: {str(e)}")
-            raise
+        # Save model state
+        torch.save(self.model.state_dict(), filepath)
+        
+        # Save scaler
+        scaler_path = filepath.replace('.pth', '_scaler.pkl')
+        with open(scaler_path, 'wb') as f:
+            pickle.dump(self.scaler, f)
+        
+        logger.info(f"Model saved to {filepath}")
     
-    @classmethod
-    def load_model(cls, filepath: str, data: pd.Series) -> 'LSTMModel':
+    def load_model(self, filepath: str) -> None:
         """
-        Load a saved model from a file.
+        Load a trained model.
         
         Args:
             filepath (str): Path to the saved model
-            data (pd.Series): Original data series
-            
-        Returns:
-            LSTMModel: Loaded model instance
         """
-        try:
-            import pickle
-            
-            # Load Keras model
-            model_path = filepath.replace('.pkl', '_model.h5')
-            keras_model = load_model(model_path)
-            
-            # Load other components
-            with open(filepath, 'rb') as f:
-                model_data = pickle.load(f)
-            
-            # Create new instance
-            instance = cls(data, model_data['sequence_length'])
-            instance.model = keras_model
-            instance.scaler = model_data['scaler']
-            instance.history = model_data['history']
-            instance.forecast = model_data['forecast']
-            
-            logger.info(f"Model loaded from {filepath} and {model_path}")
-            return instance
-            
-        except Exception as e:
-            logger.error(f"Error loading model: {str(e)}")
-            raise
+        # Load model state
+        self.model = LSTMModel()
+        self.model.load_state_dict(torch.load(filepath, map_location=self.device))
+        self.model.to(self.device)
+        
+        # Load scaler
+        scaler_path = filepath.replace('.pth', '_scaler.pkl')
+        with open(scaler_path, 'rb') as f:
+            self.scaler = pickle.load(f)
+        
+        logger.info(f"Model loaded from {filepath}")
+    
+    def plot_training_history(self) -> None:
+        """
+        Plot the training history.
+        """
+        if self.history is None:
+            logger.warning("No training history available")
+            return
+        
+        import matplotlib.pyplot as plt
+        
+        plt.figure(figsize=(10, 6))
+        plt.plot(self.history['train_loss'], label='Training Loss')
+        plt.plot(self.history['val_loss'], label='Validation Loss')
+        plt.title('Training History')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+    
+    def plot_predictions(self) -> None:
+        """
+        Plot the predictions vs actual values.
+        """
+        if self.test_predictions is None:
+            logger.warning("No test predictions available")
+            return
+        
+        import matplotlib.pyplot as plt
+        
+        # Inverse transform for plotting
+        y_test_actual = self.scaler.inverse_transform(self.y_test.reshape(-1, 1)).flatten()
+        y_test_pred = self.scaler.inverse_transform(self.test_predictions.reshape(-1, 1)).flatten()
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(y_test_actual, label='Actual', alpha=0.7)
+        plt.plot(y_test_pred, label='Predicted', alpha=0.7)
+        plt.title('Test Predictions vs Actual Values')
+        plt.xlabel('Time')
+        plt.ylabel('Value')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+    
+    def plot_forecast(self) -> None:
+        """
+        Plot the forecast.
+        """
+        if self.forecast is None:
+            logger.warning("No forecast available")
+            return
+        
+        import matplotlib.pyplot as plt
+        
+        # Get the last part of the original data for context
+        last_data = self.data.tail(50)
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(last_data.index, last_data.values, label='Historical Data', alpha=0.7)
+        
+        # Create future index
+        future_index = pd.date_range(start=last_data.index[-1], periods=len(self.forecast) + 1, freq='D')[1:]
+        plt.plot(future_index, self.forecast, label='Forecast', alpha=0.7, linestyle='--')
+        
+        plt.title('Time Series Forecast')
+        plt.xlabel('Time')
+        plt.ylabel('Value')
+        plt.legend()
+        plt.grid(True)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
 
 
-def auto_lstm(data: pd.Series, sequence_length: int = 10, 
-               lstm_units: List[int] = [50, 50], epochs: int = 100,
-               **kwargs) -> LSTMModel:
+def create_lstm_model(data: pd.Series, sequence_length: int = 10, 
+                     hidden_size: int = 50, num_layers: int = 2, 
+                     dropout: float = 0.2, learning_rate: float = 0.001,
+                     epochs: int = 100, batch_size: int = 32) -> LSTMForecaster:
     """
-    Convenience function to automatically build, train, and evaluate an LSTM model.
+    Factory function to create and train an LSTM model.
     
     Args:
         data (pd.Series): Time series data
         sequence_length (int): Length of input sequences
-        lstm_units (List[int]): Number of units in each LSTM layer
-        epochs (int): Maximum number of training epochs
-        **kwargs: Additional arguments for LSTM model
+        hidden_size (int): Number of hidden units in LSTM
+        num_layers (int): Number of LSTM layers
+        dropout (float): Dropout rate
+        learning_rate (float): Learning rate for optimizer
+        epochs (int): Number of training epochs
+        batch_size (int): Batch size for training
         
     Returns:
-        LSTMModel: Trained LSTM model
+        Trained LSTMForecaster instance
     """
-    # Initialize model
-    model = LSTMModel(data, sequence_length)
+    # Create forecaster
+    forecaster = LSTMForecaster(data, sequence_length)
     
     # Prepare data
-    model.prepare_data()
+    forecaster.prepare_data()
     
-    # Build model
-    model.build_model(lstm_units=lstm_units, **kwargs)
+    # Build and train model
+    forecaster.build_model(hidden_size, num_layers, dropout, learning_rate)
+    forecaster.train(epochs, batch_size)
     
-    # Train model
-    model.train_model(epochs=epochs, **kwargs)
-    
-    # Make predictions
-    model.make_predictions()
-    
-    # Evaluate model
-    metrics = model.evaluate_model()
-    
-    logger.info("Auto LSTM model completed successfully")
-    return model
+    return forecaster
 
 
 if __name__ == "__main__":
@@ -548,7 +514,7 @@ if __name__ == "__main__":
     print("Sample data loaded, training LSTM model...")
     
     # Auto-train LSTM model
-    lstm_model = auto_lstm(ts_data, sequence_length=10, epochs=50)
+    lstm_model = create_lstm_model(ts_data, sequence_length=10, epochs=50)
     
     # Generate forecast
     forecast = lstm_model.forecast_future(steps=30)
@@ -557,4 +523,4 @@ if __name__ == "__main__":
     print(f"Forecast generated for {len(forecast)} steps")
     
     # Save model
-    lstm_model.save_model('data/processed/lstm_model.pkl')
+    lstm_model.save_model('data/processed/lstm_model.pth')

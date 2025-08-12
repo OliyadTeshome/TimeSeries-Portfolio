@@ -13,7 +13,7 @@ import warnings
 import logging
 
 from .arima_model import ARIMAModel, auto_arima
-from .lstm_model import LSTMModel, auto_lstm
+from .lstm_model import LSTMForecaster, create_lstm_model
 
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
@@ -77,16 +77,21 @@ class ForecastingEngine:
         return self
     
     def add_lstm_model(self, model_name: str = 'lstm', 
-                       sequence_length: int = 10, lstm_units: List[int] = [50, 50],
-                       epochs: int = 100, **kwargs) -> 'ForecastingEngine':
+                       sequence_length: int = 10, hidden_size: int = 50, num_layers: int = 2,
+                       dropout: float = 0.2, learning_rate: float = 0.001,
+                       epochs: int = 100, batch_size: int = 32, **kwargs) -> 'ForecastingEngine':
         """
         Add an LSTM model to the forecasting engine.
         
         Args:
             model_name (str): Name for the model
             sequence_length (int): Length of input sequences
-            lstm_units (List[int]): Number of units in each LSTM layer
+            hidden_size (int): Number of hidden units in LSTM
+            num_layers (int): Number of LSTM layers
+            dropout (float): Dropout rate
+            learning_rate (float): Learning rate for optimizer
             epochs (int): Maximum number of training epochs
+            batch_size (int): Batch size for training
             **kwargs: Additional arguments for LSTM model
             
         Returns:
@@ -94,8 +99,9 @@ class ForecastingEngine:
         """
         try:
             logger.info(f"Adding LSTM model: {model_name}")
-            lstm_model = auto_lstm(
-                self.data, sequence_length, lstm_units, epochs, **kwargs
+            lstm_model = create_lstm_model(
+                self.data, sequence_length, hidden_size, num_layers, 
+                dropout, learning_rate, epochs, batch_size, **kwargs
             )
             self.models[model_name] = lstm_model
             logger.info(f"LSTM model {model_name} added successfully")
@@ -131,7 +137,7 @@ class ForecastingEngine:
                         'confidence_intervals': ci,
                         'model_type': 'ARIMA'
                     }
-                elif isinstance(model, LSTMModel):
+                elif isinstance(model, LSTMForecaster):
                     forecast = model.forecast_future(steps)
                     self.forecasts[model_name] = {
                         'forecast': forecast,
@@ -229,13 +235,9 @@ class ForecastingEngine:
             try:
                 if isinstance(model, ARIMAModel):
                     metrics = model.evaluate_model(test_data)
-                elif isinstance(model, LSTMModel):
+                elif isinstance(model, LSTMForecaster):
                     # For LSTM, we need to use the test predictions that were already generated
-                    if hasattr(model, 'y_test_actual') and hasattr(model, 'test_predictions'):
-                        metrics = model._calculate_metrics(model.y_test_actual, model.test_predictions)
-                    else:
-                        logger.warning(f"LSTM model {model_name} test predictions not available")
-                        continue
+                    metrics = model.evaluate()
                 else:
                     logger.warning(f"Unknown model type for {model_name}")
                     continue
