@@ -12,8 +12,8 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 import warnings
 import logging
 
-from .arima_model import ARIMAModel, auto_arima
-from .lstm_model import LSTMForecaster, create_lstm_model
+from arima_model import ARIMAModel, auto_arima
+from lstm_model import LSTMForecaster, create_lstm_model
 
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
