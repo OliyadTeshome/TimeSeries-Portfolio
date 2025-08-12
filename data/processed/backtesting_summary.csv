@@ -1,0 +1,4 @@
+Strategy,Total Return,Annual Return,Volatility,Sharpe Ratio,Max Drawdown,Final Value
+Optimal Portfolio,37.46%,37.64%,63.33%,0.563,55.38%,"$137,462"
+Benchmark Portfolio,12.73%,12.78%,12.45%,0.866,14.85%,"$112,726"
+Min Vol Portfolio,4.88%,4.90%,5.07%,0.572,5.16%,"$104,882"
