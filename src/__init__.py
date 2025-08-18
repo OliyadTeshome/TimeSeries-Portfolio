@@ -26,9 +26,9 @@ from .config import (
     get_system_config
 )
 from .base import (
-    BaseModel, BaseDataProcessor, BasePortfolioOptimizer, BaseBacktester,
-    ModelRegistry, model_registry, ModelType, OptimizationMethod, StrategyType,
-    ModelResult, PerformanceMetrics, PortfolioResult, BacktestResult
+    BaseModel, BaseDataProcessor, BasePortfolioOptimizer, BaseBacktestingStrategy,
+    ModelFactory, StrategyFactory, ModelType, OptimizationMethod, StrategyType,
+    ModelResult, PerformanceMetrics
 )
 from .exceptions import (
     TimeSeriesPortfolioError, DataError, DataValidationError, DataNotFoundError,
@@ -41,9 +41,16 @@ from .validation import (
     ValidationSeverity, ValidationStatus, validate_financial_data
 )
 from .logging_config import (
-    setup_logging, log_function_call, log_performance, 
-    PerformanceLogger, ContextLogger, performance_logger, context_logger
+    setup_logging, get_logger, 
+    PerformanceLogger, ErrorTracker, TimerContext
 )
+
+# Phase 2: Advanced Features
+from .dashboard import FinancialDashboard
+from .explainability import ModelExplainer, ModelDiagnostics, create_explainer, create_diagnostics
+from .risk_management import RiskManager, create_risk_manager
+from .portfolio_analytics import PortfolioAnalytics, create_portfolio_analytics
+from .real_time_data import RealTimeDataManager, create_real_time_manager
 
 __all__ = [
     # Data management
@@ -84,9 +91,9 @@ __all__ = [
     'get_system_config',
     
     # Base classes and interfaces
-    'BaseModel', 'BaseDataProcessor', 'BasePortfolioOptimizer', 'BaseBacktester',
-    'ModelRegistry', 'model_registry', 'ModelType', 'OptimizationMethod', 'StrategyType',
-    'ModelResult', 'PerformanceMetrics', 'PortfolioResult', 'BacktestResult',
+    'BaseModel', 'BaseDataProcessor', 'BasePortfolioOptimizer', 'BaseBacktestingStrategy',
+    'ModelFactory', 'StrategyFactory', 'ModelType', 'OptimizationMethod', 'StrategyType',
+    'ModelResult', 'PerformanceMetrics',
     
     # Exception handling
     'TimeSeriesPortfolioError', 'DataError', 'DataValidationError', 'DataNotFoundError',
@@ -99,6 +106,22 @@ __all__ = [
     'ValidationSeverity', 'ValidationStatus', 'validate_financial_data',
     
     # Enhanced logging
-    'setup_logging', 'log_function_call', 'log_performance',
-    'PerformanceLogger', 'ContextLogger', 'performance_logger', 'context_logger',
+    'setup_logging', 'get_logger',
+    'PerformanceLogger', 'ErrorTracker', 'TimerContext',
+
+# Phase 2: Advanced Features
+# Interactive Dashboard
+'FinancialDashboard',
+
+# Model Explainability
+'ModelExplainer', 'ModelDiagnostics', 'create_explainer', 'create_diagnostics',
+
+# Advanced Risk Management
+'RiskManager', 'create_risk_manager',
+
+# Enhanced Portfolio Analytics
+'PortfolioAnalytics', 'create_portfolio_analytics',
+
+# Real-time Data Integration
+'RealTimeDataManager', 'create_real_time_manager',
 ]

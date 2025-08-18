@@ -639,5 +639,6 @@ def register_builtin_strategies():
 
 
 # Auto-register built-in components
-register_builtin_models()
-register_builtin_strategies()
+# Temporarily disabled due to inheritance issues
+# register_builtin_models()
+# register_builtin_strategies()

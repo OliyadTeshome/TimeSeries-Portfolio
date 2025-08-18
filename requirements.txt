@@ -53,6 +53,13 @@ flake8>=6.0.0         # Code linting
 mypy>=1.0.0           # Type checking
 pre-commit>=3.0.0     # Git hooks for code quality
 
+# Phase 2: Advanced Features
+streamlit>=1.25.0     # Interactive web dashboard
+shap>=0.41.0          # Model explainability
+lime>=0.2.0           # Local interpretable model explanations
+websockets>=11.0.0    # Real-time data streaming
+schedule>=1.2.0       # Task scheduling
+
 # Note: This requirements.txt has been updated for Python 3.13 compatibility
 # TensorFlow and Keras are not compatible with Python 3.13
 # PyTorch, XGBoost, and LightGBM are recommended alternatives for deep learning

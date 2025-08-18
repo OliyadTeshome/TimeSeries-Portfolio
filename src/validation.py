@@ -15,7 +15,7 @@ from enum import Enum
 
 from .exceptions import DataValidationError, ValidationError
 from .config import get_data_config
-from .logging_config import log_function_call, log_performance
+from .logging_config import setup_logging, get_logger
 
 logger = logging.getLogger(__name__)
 
@@ -309,8 +309,6 @@ class DataValidator:
                 return True
         return False
     
-    @log_function_call
-    @log_performance("data_validation")
     def validate_data(self, data: pd.DataFrame, data_source: str = "unknown") -> ValidationReport:
         """
         Validate financial time series data.
