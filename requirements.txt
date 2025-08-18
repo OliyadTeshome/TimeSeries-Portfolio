@@ -43,6 +43,16 @@ pulp>=2.6.0
 tqdm>=4.64.0
 joblib>=1.2.0
 
+# Enhanced framework dependencies (Phase 1)
+pyyaml>=6.0           # Configuration management
+pytest>=7.0.0         # Testing framework
+pytest-cov>=4.0.0     # Test coverage
+pytest-mock>=3.10.0   # Mocking for tests
+black>=23.0.0         # Code formatting
+flake8>=6.0.0         # Code linting
+mypy>=1.0.0           # Type checking
+pre-commit>=3.0.0     # Git hooks for code quality
+
 # Note: This requirements.txt has been updated for Python 3.13 compatibility
 # TensorFlow and Keras are not compatible with Python 3.13
 # PyTorch, XGBoost, and LightGBM are recommended alternatives for deep learning

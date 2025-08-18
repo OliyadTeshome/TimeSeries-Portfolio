@@ -1,0 +1,93 @@
+# TimeSeries-Portfolio Configuration File
+# This file demonstrates the configuration options available for the framework
+
+models:
+  # ARIMA model parameters
+  arima_max_p: 8
+  arima_max_q: 8
+  arima_max_d: 2
+  arima_seasonal: false
+  arima_seasonal_periods: 12
+  
+  # LSTM model parameters
+  lstm_sequence_length: 15
+  lstm_hidden_size: 128
+  lstm_num_layers: 3
+  lstm_dropout: 0.3
+  lstm_learning_rate: 0.0005
+  lstm_epochs: 150
+  lstm_batch_size: 64
+  
+  # Ensemble parameters
+  ensemble_method: 'weighted_average'
+  ensemble_weights:
+    arima: 0.4
+    lstm: 0.6
+
+data:
+  # Data paths
+  data_path: "data/"
+  raw_data_path: "data/raw/"
+  processed_data_path: "data/processed/"
+  cache_path: "data/cache/"
+  
+  # Data validation
+  min_data_length: 100
+  max_missing_ratio: 0.05
+  outlier_threshold: 2.5
+  
+  # Feature engineering
+  create_lags: true
+  max_lags: 15
+  create_rolling_features: true
+  rolling_windows: [5, 10, 20, 50]
+
+portfolio:
+  # Optimization parameters
+  risk_free_rate: 0.025
+  optimization_method: 'sharpe_ratio'
+  max_portfolio_weight: 0.5
+  min_portfolio_weight: 0.0
+  
+  # Risk metrics
+  var_confidence_level: 0.05
+  cvar_confidence_level: 0.05
+  max_drawdown_threshold: 0.15
+  
+  # Optimization constraints
+  enable_constraints: true
+  target_return: null
+  target_volatility: null
+
+backtesting:
+  # Backtesting parameters
+  initial_capital: 500000
+  transaction_cost: 0.0015
+  slippage: 0.0008
+  rebalance_frequency: 21
+  
+  # Performance metrics
+  benchmark_asset: 'SPY'
+  risk_free_rate: 0.025
+  
+  # Strategy parameters
+  momentum_lookback: 25
+  mean_reversion_lookback: 25
+  volatility_lookback: 25
+
+system:
+  # Logging configuration
+  log_level: "INFO"
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_file: "logs/timeseries_portfolio.log"
+  
+  # Performance settings
+  enable_caching: true
+  cache_ttl: 7200  # 2 hours
+  max_workers: 8
+  
+  # Output settings
+  output_format: "markdown"
+  save_figures: true
+  figure_format: "png"
+  figure_dpi: 300
